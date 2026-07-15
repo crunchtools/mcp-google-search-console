@@ -46,16 +46,15 @@ class Config:
             )
 
         refresh_token = os.environ.get("GSC_REFRESH_TOKEN")
-        if not refresh_token:
-            raise ConfigurationError(
-                "GSC_REFRESH_TOKEN environment variable required. "
-                "Obtain via OAuth consent flow with webmasters scope."
-            )
 
         self._client_id = SecretStr(client_id)
         self._client_secret = SecretStr(client_secret)
-        self._refresh_token = SecretStr(refresh_token)
+        self._refresh_token = SecretStr(refresh_token) if refresh_token else None
+        self._credentials_dir = os.environ.get("GSC_CREDENTIALS_DIR", "/data")
+        self._redirect_uri = os.environ.get("GSC_OAUTH_REDIRECT_URI", "")
 
+        if not refresh_token:
+            logger.info("No GSC_REFRESH_TOKEN set; will use file-based credentials or OAuth flow")
         logger.info("Configuration loaded successfully")
 
     @property
@@ -69,9 +68,28 @@ class Config:
         return self._client_secret.get_secret_value()
 
     @property
-    def refresh_token(self) -> str:
-        """Get OAuth refresh token."""
+    def refresh_token(self) -> str | None:
+        """Get OAuth refresh token from env var, or None."""
+        if self._refresh_token is None:
+            return None
         return self._refresh_token.get_secret_value()
+
+    @property
+    def credentials_dir(self) -> str:
+        """Directory for file-based credential storage."""
+        return self._credentials_dir
+
+    @property
+    def redirect_uri(self) -> str:
+        """OAuth2 redirect URI for browser-based auth flow."""
+        return self._redirect_uri
+
+    @property
+    def auth_url(self) -> str:
+        """URL the user should visit to start the OAuth flow."""
+        if self._redirect_uri:
+            return self._redirect_uri.rsplit("/oauth2callback", 1)[0] + "/auth"
+        return "/auth"
 
     @property
     def token_endpoint(self) -> str:

@@ -1,13 +1,18 @@
 """FastMCP server setup for Google Search Console MCP.
 
-This module creates and configures the MCP server with all tools.
+This module creates and configures the MCP server with all tools,
+plus OAuth2 browser-based authentication routes.
 """
 
 import logging
 from typing import Any
 
 from fastmcp import FastMCP
+from starlette.requests import Request
+from starlette.responses import HTMLResponse, RedirectResponse, Response
 
+from .auth import build_consent_url, exchange_code, save_credentials, validate_state
+from .config import get_config
 from .tools import (
     add_site,
     delete_site,
@@ -232,4 +237,75 @@ async def inspect_url_tool(
         inspection_url=inspection_url,
         site_url=site_url,
         language_code=language_code,
+    )
+
+
+# --- OAuth2 browser-based authentication routes ---
+
+
+@mcp.custom_route("/auth", methods=["GET"])
+async def auth_redirect(request: Request) -> Response:  # noqa: ARG001
+    """Redirect the user to Google's OAuth consent screen."""
+    config = get_config()
+    if not config.redirect_uri:
+        return HTMLResponse(
+            "<h2>OAuth not configured</h2>"
+            "<p>Set GSC_OAUTH_REDIRECT_URI to enable browser-based authentication.</p>",
+            status_code=500,
+        )
+    url = build_consent_url(config.client_id, config.redirect_uri)
+    return RedirectResponse(url=url)
+
+
+@mcp.custom_route("/oauth2callback", methods=["GET"])
+async def oauth_callback(request: Request) -> Response:
+    """Handle the OAuth2 callback from Google."""
+    error = request.query_params.get("error")
+    if error:
+        return HTMLResponse(
+            f"<h2>Authentication failed</h2><p>Google returned: {error}</p>",
+            status_code=400,
+        )
+
+    code = request.query_params.get("code")
+    state = request.query_params.get("state")
+    if not code or not state:
+        return HTMLResponse(
+            "<h2>Invalid callback</h2><p>Missing code or state parameter.</p>",
+            status_code=400,
+        )
+
+    if not validate_state(state):
+        return HTMLResponse(
+            "<h2>Invalid state</h2><p>CSRF state mismatch or expired. Try again from /auth.</p>",
+            status_code=400,
+        )
+
+    config = get_config()
+    try:
+        tokens = await exchange_code(
+            config.client_id,
+            config.client_secret,
+            code,
+            config.redirect_uri,
+        )
+    except RuntimeError as e:
+        logger.exception("Token exchange failed")
+        return HTMLResponse(
+            f"<h2>Token exchange failed</h2><p>{e}</p>",
+            status_code=500,
+        )
+
+    save_credentials(config.credentials_dir, tokens)
+
+    # Invalidate the client's cached token so next call loads from file
+    from . import client as client_mod
+
+    if client_mod._client is not None:
+        client_mod._client._access_token = None
+        client_mod._client._token_expires_at = 0.0
+
+    return HTMLResponse(
+        "<h2>Authentication complete</h2>"
+        "<p>Google Search Console credentials saved. You can close this window.</p>"
     )

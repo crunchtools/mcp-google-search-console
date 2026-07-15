@@ -71,3 +71,15 @@ class ValidationError(UserError):
     """Input validation error."""
 
     pass
+
+
+class AuthRequiredError(UserError):
+    """OAuth credentials are missing or expired.
+
+    The message includes the URL the user should visit to re-authenticate.
+    """
+
+    def __init__(self, auth_url: str) -> None:
+        super().__init__(
+            f"OAuth credentials expired or missing. Re-authenticate by visiting: {auth_url}"
+        )

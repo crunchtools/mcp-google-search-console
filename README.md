@@ -37,17 +37,13 @@ podman run -d -p 8017:8017 \
 
 ## OAuth Setup
 
-This server authenticates to Google using OAuth2 with a **refresh token**. This is a one-time setup — once you have the three credentials, you store them as environment variables and never need to touch OAuth again.
+This server supports two authentication methods: **browser-based OAuth** (recommended) and **environment variable** (fallback).
 
-### What you need
+### Option A: Browser-Based OAuth (Recommended)
 
-| Credential | What it is | Where it comes from |
-|------------|-----------|-------------------|
-| `GSC_CLIENT_ID` | Identifies your OAuth app to Google | Google Cloud Console |
-| `GSC_CLIENT_SECRET` | Secret key for your OAuth app | Google Cloud Console |
-| `GSC_REFRESH_TOKEN` | Long-lived token that lets the server get access tokens | One-time browser consent flow |
+Browser-based OAuth handles token exchange automatically. When credentials expire, visit the `/auth` URL and click through Google's consent screen — no manual code exchange needed.
 
-### Step 1: Create a Google Cloud OAuth App
+#### Step 1: Create a Google Cloud OAuth App
 
 1. Go to [Google Cloud Console](https://console.cloud.google.com/)
 2. Create a new project (or select an existing one)
@@ -61,50 +57,12 @@ This server authenticates to Google using OAuth2 with a **refresh token**. This 
    - Scopes: add `https://www.googleapis.com/auth/webmasters`
    - Test users: add your Google account email
 8. Back on Create OAuth client ID:
-   - Application type: **Desktop app**
-   - Name: anything (e.g., "MCP Search Console Desktop")
+   - Application type: **Web application**
+   - Name: anything (e.g., "MCP Search Console")
+   - Authorized redirect URIs: add your server's callback URL (e.g., `https://mcp-gsc.example.com/oauth2callback`)
 9. Click **Create** — copy the **Client ID** and **Client Secret**
 
-### Step 2: Get a Refresh Token
-
-Run this in your terminal to start the consent flow:
-
-```bash
-# Set your credentials from Step 1
-export GSC_CLIENT_ID="your_client_id_here"
-export GSC_CLIENT_SECRET="your_client_secret_here"
-
-# Generate the authorization URL
-echo "Open this URL in your browser:"
-echo ""
-echo "https://accounts.google.com/o/oauth2/v2/auth?client_id=${GSC_CLIENT_ID}&redirect_uri=http://127.0.0.1&response_type=code&scope=https://www.googleapis.com/auth/webmasters&access_type=offline&prompt=consent"
-```
-
-1. Open the printed URL in your browser
-2. Sign in with the Google account that owns your Search Console properties
-3. Click **Allow** to grant Search Console access
-4. The browser will redirect to `http://127.0.0.1/?code=XXXX&scope=...`
-5. **This page will fail to load — that's expected.** Copy the `code=` value from the URL bar (everything between `code=` and `&scope`)
-
-Now exchange the authorization code for a refresh token:
-
-```bash
-# Paste the code value from the URL bar (the part between code= and &scope)
-AUTH_CODE="paste_your_code_here"
-
-curl -s -X POST https://oauth2.googleapis.com/token \
-    -d "client_id=${GSC_CLIENT_ID}" \
-    -d "client_secret=${GSC_CLIENT_SECRET}" \
-    -d "code=${AUTH_CODE}" \
-    -d "grant_type=authorization_code" \
-    -d "redirect_uri=http://127.0.0.1" | python3 -m json.tool
-```
-
-The response will include a `refresh_token` field — copy it. This is the long-lived credential that lets the server authenticate without a browser.
-
-> **Note:** If you don't see `refresh_token` in the response, add `&prompt=consent` to the authorization URL and try again. Google only returns the refresh token on the first consent or when explicitly prompted.
-
-### Step 3: Store the Credentials
+#### Step 2: Configure and Start
 
 Create an env file:
 
@@ -112,20 +70,66 @@ Create an env file:
 cat > ~/.config/mcp-env/mcp-google-search-console.env << 'EOF'
 GSC_CLIENT_ID=your_client_id
 GSC_CLIENT_SECRET=your_client_secret
-GSC_REFRESH_TOKEN=your_refresh_token
+GSC_CREDENTIALS_DIR=/data
+GSC_OAUTH_REDIRECT_URI=https://mcp-gsc.example.com/oauth2callback
 EOF
 chmod 600 ~/.config/mcp-env/mcp-google-search-console.env
 ```
 
+Start the server with a persistent volume for credentials:
+
+```bash
+podman run -d -p 8017:8017 \
+    --env-file ~/.config/mcp-env/mcp-google-search-console.env \
+    -v mcp-gsc-data:/data:Z \
+    quay.io/crunchtools/mcp-google-search-console \
+    --transport streamable-http --host 0.0.0.0
+```
+
+#### Step 3: Authenticate
+
+Visit `https://mcp-gsc.example.com/auth` in your browser. You'll be redirected to Google's consent screen. Grant access and the server will save credentials automatically.
+
+When tokens expire, any tool call will return the `/auth` URL. Click it to re-authenticate — no container restart needed.
+
+### Option B: Environment Variable (Fallback)
+
+If you prefer static credentials or can't expose a callback URL, set `GSC_REFRESH_TOKEN` in your env file. See the [manual OAuth flow](#manual-oauth-flow) below.
+
+<details>
+<summary><strong>Manual OAuth flow</strong></summary>
+
+```bash
+export GSC_CLIENT_ID="your_client_id_here"
+export GSC_CLIENT_SECRET="your_client_secret_here"
+
+echo "https://accounts.google.com/o/oauth2/v2/auth?client_id=${GSC_CLIENT_ID}&redirect_uri=http://127.0.0.1&response_type=code&scope=https://www.googleapis.com/auth/webmasters&access_type=offline&prompt=consent"
+```
+
+1. Open the URL in your browser, sign in, and click **Allow**
+2. Copy the `code=` value from the redirect URL
+3. Exchange the code:
+
+```bash
+curl -s -X POST https://oauth2.googleapis.com/token \
+    -d "client_id=${GSC_CLIENT_ID}" \
+    -d "client_secret=${GSC_CLIENT_SECRET}" \
+    -d "code=PASTE_CODE_HERE" \
+    -d "grant_type=authorization_code" \
+    -d "redirect_uri=http://127.0.0.1" | python3 -m json.tool
+```
+
+4. Copy the `refresh_token` from the response and add `GSC_REFRESH_TOKEN=...` to your env file.
+
+</details>
+
 ### How it works at runtime
 
-The server never stores or manages tokens on disk. On each API call:
-1. Server sends the refresh token to Google's token endpoint
-2. Google returns a short-lived access token (valid ~1 hour)
-3. Server uses the access token for the Search Console API call
-4. Access tokens are cached in memory and refreshed automatically when they expire
+The server checks for credentials in this order:
+1. **File-based credentials** from `GSC_CREDENTIALS_DIR/credentials.json` (written by the browser-based flow)
+2. **Environment variable** `GSC_REFRESH_TOKEN` (fallback)
 
-The refresh token itself never expires unless you explicitly revoke it in your [Google Account permissions](https://myaccount.google.com/permissions).
+On each API call, the server exchanges the refresh token for a short-lived access token (~1 hour), cached in memory and refreshed automatically. Updated tokens are persisted to the credentials file for reuse across container restarts.
 
 ## Available Tools (10)
 
@@ -139,7 +143,7 @@ The refresh token itself never expires unless you explicitly revoke it in your [
 ## Security
 
 - OAuth2 credentials stored as `SecretStr` (never logged)
-- Environment-variable-only credential storage
+- File-based credentials written with `0o600` permissions (atomic writes)
 - Automatic token scrubbing from error messages
 - Pydantic input validation with `extra="forbid"`
 - No filesystem access, shell execution, or code evaluation

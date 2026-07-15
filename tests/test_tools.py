@@ -118,16 +118,15 @@ class TestConfigSafety:
         finally:
             os.environ["GSC_CLIENT_SECRET"] = saved
 
-    def test_config_requires_refresh_token(self) -> None:
-        """Config should require GSC_REFRESH_TOKEN."""
+    def test_config_refresh_token_optional(self) -> None:
+        """Config should accept missing GSC_REFRESH_TOKEN (file-based auth)."""
         from mcp_google_search_console_crunchtools.config import Config
-        from mcp_google_search_console_crunchtools.errors import ConfigurationError
 
         saved = os.environ.pop("GSC_REFRESH_TOKEN")
 
         try:
-            with pytest.raises(ConfigurationError, match="GSC_REFRESH_TOKEN"):
-                Config()
+            config = Config()
+            assert config.refresh_token is None
         finally:
             os.environ["GSC_REFRESH_TOKEN"] = saved
 
@@ -140,12 +139,14 @@ class TestSiteTools:
         """list_sites should return site entries."""
         from mcp_google_search_console_crunchtools.tools import list_sites
 
-        mock_resp = _mock_response(json_data={
-            "siteEntry": [
-                {"siteUrl": "https://crunchtools.com/", "permissionLevel": "siteOwner"},
-                {"siteUrl": "https://educatedconfusion.com/", "permissionLevel": "siteOwner"},
-            ]
-        })
+        mock_resp = _mock_response(
+            json_data={
+                "siteEntry": [
+                    {"siteUrl": "https://crunchtools.com/", "permissionLevel": "siteOwner"},
+                    {"siteUrl": "https://educatedconfusion.com/", "permissionLevel": "siteOwner"},
+                ]
+            }
+        )
 
         with _patch_client(mock_resp):
             result = await list_sites()
@@ -158,10 +159,12 @@ class TestSiteTools:
         """get_site should return site details."""
         from mcp_google_search_console_crunchtools.tools import get_site
 
-        mock_resp = _mock_response(json_data={
-            "siteUrl": "https://crunchtools.com/",
-            "permissionLevel": "siteOwner",
-        })
+        mock_resp = _mock_response(
+            json_data={
+                "siteUrl": "https://crunchtools.com/",
+                "permissionLevel": "siteOwner",
+            }
+        )
 
         with _patch_client(mock_resp):
             result = await get_site(site_url="https://crunchtools.com/")
@@ -201,18 +204,20 @@ class TestAnalyticsTools:
         """query_search_analytics should return analytics data."""
         from mcp_google_search_console_crunchtools.tools import query_search_analytics
 
-        mock_resp = _mock_response(json_data={
-            "rows": [
-                {
-                    "keys": ["2026-03-01"],
-                    "clicks": 150.0,
-                    "impressions": 3000.0,
-                    "ctr": 0.05,
-                    "position": 12.5,
-                }
-            ],
-            "responseAggregationType": "byProperty",
-        })
+        mock_resp = _mock_response(
+            json_data={
+                "rows": [
+                    {
+                        "keys": ["2026-03-01"],
+                        "clicks": 150.0,
+                        "impressions": 3000.0,
+                        "ctr": 0.05,
+                        "position": 12.5,
+                    }
+                ],
+                "responseAggregationType": "byProperty",
+            }
+        )
 
         with _patch_client(mock_resp):
             result = await query_search_analytics(
@@ -230,10 +235,12 @@ class TestAnalyticsTools:
         """query_search_analytics should accept dimension filter groups."""
         from mcp_google_search_console_crunchtools.tools import query_search_analytics
 
-        mock_resp = _mock_response(json_data={
-            "rows": [],
-            "responseAggregationType": "auto",
-        })
+        mock_resp = _mock_response(
+            json_data={
+                "rows": [],
+                "responseAggregationType": "auto",
+            }
+        )
 
         with _patch_client(mock_resp):
             result = await query_search_analytics(
@@ -256,16 +263,18 @@ class TestSitemapTools:
         """list_sitemaps should return sitemap entries."""
         from mcp_google_search_console_crunchtools.tools import list_sitemaps
 
-        mock_resp = _mock_response(json_data={
-            "sitemap": [
-                {
-                    "path": "https://crunchtools.com/sitemap.xml",
-                    "lastSubmitted": "2026-03-01T00:00:00Z",
-                    "isPending": False,
-                    "isSitemapsIndex": True,
-                }
-            ]
-        })
+        mock_resp = _mock_response(
+            json_data={
+                "sitemap": [
+                    {
+                        "path": "https://crunchtools.com/sitemap.xml",
+                        "lastSubmitted": "2026-03-01T00:00:00Z",
+                        "isPending": False,
+                        "isSitemapsIndex": True,
+                    }
+                ]
+            }
+        )
 
         with _patch_client(mock_resp):
             result = await list_sitemaps(site_url="https://crunchtools.com/")
@@ -277,11 +286,13 @@ class TestSitemapTools:
         """get_sitemap should return sitemap details."""
         from mcp_google_search_console_crunchtools.tools import get_sitemap
 
-        mock_resp = _mock_response(json_data={
-            "path": "https://crunchtools.com/sitemap.xml",
-            "lastSubmitted": "2026-03-01T00:00:00Z",
-            "isPending": False,
-        })
+        mock_resp = _mock_response(
+            json_data={
+                "path": "https://crunchtools.com/sitemap.xml",
+                "lastSubmitted": "2026-03-01T00:00:00Z",
+                "isPending": False,
+            }
+        )
 
         with _patch_client(mock_resp):
             result = await get_sitemap(
@@ -330,18 +341,20 @@ class TestInspectionTools:
         """inspect_url should return inspection result."""
         from mcp_google_search_console_crunchtools.tools import inspect_url
 
-        mock_resp = _mock_response(json_data={
-            "inspectionResult": {
-                "indexStatusResult": {
-                    "verdict": "PASS",
-                    "coverageState": "Submitted and indexed",
-                    "lastCrawlTime": "2026-03-01T12:00:00Z",
-                },
-                "mobileUsabilityResult": {
-                    "verdict": "PASS",
-                },
+        mock_resp = _mock_response(
+            json_data={
+                "inspectionResult": {
+                    "indexStatusResult": {
+                        "verdict": "PASS",
+                        "coverageState": "Submitted and indexed",
+                        "lastCrawlTime": "2026-03-01T12:00:00Z",
+                    },
+                    "mobileUsabilityResult": {
+                        "verdict": "PASS",
+                    },
+                }
             }
-        })
+        )
 
         with _patch_client(mock_resp):
             result = await inspect_url(
@@ -374,8 +387,7 @@ class TestClientErrorHandling:
 
         with (
             patch(
-                "mcp_google_search_console_crunchtools.client"
-                ".SearchConsoleClient._ensure_token",
+                "mcp_google_search_console_crunchtools.client.SearchConsoleClient._ensure_token",
                 new_callable=AsyncMock,
             ),
             patch("httpx.AsyncClient", return_value=mock_client),

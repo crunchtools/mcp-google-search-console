@@ -6,12 +6,15 @@ Handles automatic OAuth2 token refresh and dual base URL routing.
 
 import logging
 import time
+from datetime import datetime, timezone
 from typing import Any
 
 import httpx
 
+from .auth import load_credentials, save_credentials
 from .config import get_config
 from .errors import (
+    AuthRequiredError,
     PermissionDeniedError,
     RateLimitError,
     SearchConsoleApiError,
@@ -62,12 +65,35 @@ class SearchConsoleClient:
         self._access_token: str | None = None
         self._token_expires_at: float = 0.0
 
+    def _get_refresh_token(self) -> str:
+        """Get refresh token from file-based credentials or env var fallback."""
+        creds = load_credentials(self._config.credentials_dir)
+        if creds and creds.get("refresh_token"):
+            # Check if file has a cached access token that's still valid
+            expiry_str = creds.get("expiry")
+            if expiry_str and creds.get("access_token"):
+                try:
+                    expiry = datetime.fromisoformat(expiry_str).timestamp()
+                    if time.time() < expiry - TOKEN_REFRESH_BUFFER:
+                        self._access_token = creds["access_token"]
+                        self._token_expires_at = expiry
+                except (ValueError, OSError):
+                    pass
+            return creds["refresh_token"]
+
+        if self._config.refresh_token:
+            return self._config.refresh_token
+
+        raise AuthRequiredError(self._config.auth_url)
+
     async def _ensure_token(self) -> None:
         """Exchange refresh_token for access_token, cache until expiry."""
-        if (
-            self._access_token
-            and time.time() < self._token_expires_at - TOKEN_REFRESH_BUFFER
-        ):
+        if self._access_token and time.time() < self._token_expires_at - TOKEN_REFRESH_BUFFER:
+            return
+
+        refresh_token = self._get_refresh_token()
+        # _get_refresh_token may have loaded a valid cached access token
+        if self._access_token and time.time() < self._token_expires_at - TOKEN_REFRESH_BUFFER:
             return
 
         async with httpx.AsyncClient(timeout=httpx.Timeout(REQUEST_TIMEOUT)) as token_client:
@@ -76,10 +102,14 @@ class SearchConsoleClient:
                 data={
                     "client_id": self._config.client_id,
                     "client_secret": self._config.client_secret,
-                    "refresh_token": self._config.refresh_token,
+                    "refresh_token": refresh_token,
                     "grant_type": "refresh_token",
                 },
             )
+
+        if response.status_code in (400, 401):
+            logger.error("Refresh token expired. Re-authenticate at: %s", self._config.auth_url)
+            raise AuthRequiredError(self._config.auth_url)
 
         if not response.is_success:
             raise SearchConsoleApiError(
@@ -91,6 +121,20 @@ class SearchConsoleClient:
         self._access_token = token_data["access_token"]
         self._token_expires_at = time.time() + token_data.get("expires_in", 3600)
         logger.debug("OAuth2 token refreshed, expires in %ds", token_data.get("expires_in", 3600))
+
+        # Persist updated credentials to file
+        expiry_ts = datetime.fromtimestamp(self._token_expires_at, tz=timezone.utc).isoformat()
+        new_refresh = token_data.get("refresh_token", refresh_token)
+        save_credentials(
+            self._config.credentials_dir,
+            {
+                "access_token": self._access_token,
+                "refresh_token": new_refresh,
+                "token_uri": self._config.token_endpoint,
+                "scope": "https://www.googleapis.com/auth/webmasters",
+                "expiry": expiry_ts,
+            },
+        )
 
     async def _get_client(self) -> httpx.AsyncClient:
         """Get or create the async HTTP client with current Bearer token."""
@@ -126,7 +170,10 @@ class SearchConsoleClient:
         """Send a single HTTP request with error wrapping."""
         try:
             return await client.request(
-                method=method, url=url, params=params, json=json_data,
+                method=method,
+                url=url,
+                params=params,
+                json=json_data,
             )
         except httpx.TimeoutException as e:
             raise SearchConsoleApiError(0, f"Request timeout: {e}") from e
@@ -184,9 +231,7 @@ class SearchConsoleClient:
         try:
             parsed = response.json()
         except ValueError as e:
-            raise SearchConsoleApiError(
-                response.status_code, f"Invalid JSON response: {e}"
-            ) from e
+            raise SearchConsoleApiError(response.status_code, f"Invalid JSON response: {e}") from e
 
         if isinstance(parsed, dict):
             return parsed
