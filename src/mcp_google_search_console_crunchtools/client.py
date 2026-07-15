@@ -79,7 +79,7 @@ class SearchConsoleClient:
                         self._token_expires_at = expiry
                 except (ValueError, OSError):
                     pass
-            return creds["refresh_token"]
+            return str(creds["refresh_token"])
 
         if self._config.refresh_token:
             return self._config.refresh_token
