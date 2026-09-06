@@ -69,7 +69,6 @@ class SearchConsoleClient:
         """Get refresh token from file-based credentials or env var fallback."""
         creds = load_credentials(self._config.credentials_dir)
         if creds and creds.get("refresh_token"):
-            # Check if file has a cached access token that's still valid
             expiry_str = creds.get("expiry")
             if expiry_str and creds.get("access_token"):
                 try:
@@ -77,8 +76,8 @@ class SearchConsoleClient:
                     if time.time() < expiry - TOKEN_REFRESH_BUFFER:
                         self._access_token = creds["access_token"]
                         self._token_expires_at = expiry
-                except (ValueError, OSError):
-                    pass
+                except (ValueError, OSError) as exc:
+                    logger.debug("Ignoring unusable cached access token, refreshing: %s", exc)
             return str(creds["refresh_token"])
 
         if self._config.refresh_token:
@@ -92,7 +91,6 @@ class SearchConsoleClient:
             return
 
         refresh_token = self._get_refresh_token()
-        # _get_refresh_token may have loaded a valid cached access token
         if self._access_token and time.time() < self._token_expires_at - TOKEN_REFRESH_BUFFER:
             return
 
@@ -122,7 +120,6 @@ class SearchConsoleClient:
         self._token_expires_at = time.time() + token_data.get("expires_in", 3600)
         logger.debug("OAuth2 token refreshed, expires in %ds", token_data.get("expires_in", 3600))
 
-        # Persist updated credentials to file
         expiry_ts = datetime.fromtimestamp(self._token_expires_at, tz=timezone.utc).isoformat()
         new_refresh = token_data.get("refresh_token", refresh_token)
         save_credentials(

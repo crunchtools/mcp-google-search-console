@@ -240,11 +240,8 @@ async def inspect_url_tool(
     )
 
 
-# --- OAuth2 browser-based authentication routes ---
-
-
 @mcp.custom_route("/auth", methods=["GET"])
-async def auth_redirect(request: Request) -> Response:  # noqa: ARG001
+async def auth_redirect(_request: Request) -> Response:
     """Redirect the user to Google's OAuth consent screen."""
     config = get_config()
     if not config.redirect_uri:
@@ -298,7 +295,6 @@ async def oauth_callback(request: Request) -> Response:
 
     save_credentials(config.credentials_dir, tokens)
 
-    # Invalidate the client's cached token so next call loads from file
     from . import client as client_mod
 
     if client_mod._client is not None:

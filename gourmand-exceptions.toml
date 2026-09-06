@@ -45,3 +45,18 @@ justification = "Error handling dispatches on HTTP status codes — standard pat
 check = "single_use_helpers"
 path = "src/mcp_google_search_console_crunchtools/client.py"
 justification = "Inlining _parse_error_body into _handle_error_response triggers PLR0912 (too many branches) — extraction is the correct fix for branch complexity"
+
+# Redundant error handling — the handler recovers by falling through, which the
+# check's heuristic cannot see: a malformed cached expiry leaves _access_token
+# unset, so the caller proceeds to refresh with the returned refresh_token. The
+# log records why the cache was skipped. Removing the handler would propagate a
+# corrupt-cache error to the user instead of transparently re-authenticating.
+[[exceptions]]
+check = "redundant_error_handling"
+path = "src/mcp_google_search_console_crunchtools/client.py"
+justification = "Handler recovers by falling through to the token refresh path; the log explains the skipped cache"
+
+[[exceptions]]
+check = "copy_paste_detection"
+path = "src/mcp_google_search_console_crunchtools/client.py"
+justification = "get_client and get_config are both the four-line lazy-singleton accessor: check the module global, construct if None, return. The duplication is the idiom; hiding it behind a generic obscures which global is being initialised."
