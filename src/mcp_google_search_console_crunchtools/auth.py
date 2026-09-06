@@ -23,6 +23,7 @@ GOOGLE_TOKEN_ENDPOINT = "https://oauth2.googleapis.com/token"
 GSC_SCOPE = "https://www.googleapis.com/auth/webmasters"
 CREDENTIALS_FILENAME = "credentials.json"
 STATE_TTL_SECONDS = 600
+OWNER_ONLY = 0o600
 
 _pending_states: dict[str, float] = {}
 
@@ -100,24 +101,24 @@ def load_credentials(credentials_dir: str) -> dict[str, Any] | None:
     if not path.exists():
         return None
     try:
-        data = json.loads(path.read_text())
+        credentials = json.loads(path.read_text())
     except (json.JSONDecodeError, OSError) as e:
         logger.warning("Failed to load credentials: %s", e)
         return None
 
-    if not isinstance(data, dict) or "refresh_token" not in data:
+    if not isinstance(credentials, dict) or "refresh_token" not in credentials:
         logger.warning("Credential file missing refresh_token, ignoring")
         return None
-    return data
+    return credentials
 
 
-def save_credentials(credentials_dir: str, data: dict[str, Any]) -> None:
+def save_credentials(credentials_dir: str, credentials: dict[str, Any]) -> None:
     """Atomically save credentials with 0o600 permissions."""
     dir_path = Path(credentials_dir)
     dir_path.mkdir(parents=True, exist_ok=True)
     target = dir_path / CREDENTIALS_FILENAME
-    tmp = dir_path / f"{CREDENTIALS_FILENAME}.tmp"
-    tmp.write_text(json.dumps(data, indent=2))
-    os.chmod(tmp, 0o600)
-    os.replace(tmp, target)
+    staging = dir_path / f"{CREDENTIALS_FILENAME}.tmp"
+    staging.write_text(json.dumps(credentials, indent=2))
+    os.chmod(staging, OWNER_ONLY)
+    os.replace(staging, target)
     logger.info("Credentials saved to %s", target)
