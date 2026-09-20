@@ -43,7 +43,9 @@ At runtime, the server exchanges the refresh token for short-lived access tokens
 |----------|----------|-------------|
 | `GSC_CLIENT_ID` | Yes | Google Cloud OAuth client ID |
 | `GSC_CLIENT_SECRET` | Yes | Google Cloud OAuth client secret |
-| `GSC_REFRESH_TOKEN` | Yes | OAuth refresh token with webmasters scope |
+| `GSC_REFRESH_TOKEN` | No | OAuth refresh token with webmasters scope (alternative to file-based credentials) |
+| `GSC_CREDENTIALS_DIR` | No | Directory for file-based OAuth credentials (default: `/data`) |
+| `GSC_OAUTH_REDIRECT_URI` | No | OAuth callback redirect URI for the browser-based consent flow |
 
 ## Available Tools (10)
 

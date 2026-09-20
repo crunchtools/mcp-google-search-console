@@ -84,11 +84,11 @@ async def exchange_code(
     if not response.is_success:
         raise RuntimeError(f"Token exchange failed ({response.status_code}): {response.text[:200]}")
 
-    data = response.json()
-    expiry = datetime.now(timezone.utc).timestamp() + data.get("expires_in", 3600)
+    token_response = response.json()
+    expiry = datetime.now(timezone.utc).timestamp() + token_response.get("expires_in", 3600)
     return {
-        "access_token": data["access_token"],
-        "refresh_token": data.get("refresh_token", ""),
+        "access_token": token_response["access_token"],
+        "refresh_token": token_response.get("refresh_token", ""),
         "token_uri": GOOGLE_TOKEN_ENDPOINT,
         "scope": GSC_SCOPE,
         "expiry": datetime.fromtimestamp(expiry, tz=timezone.utc).isoformat(),
