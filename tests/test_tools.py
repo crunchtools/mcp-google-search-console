@@ -5,6 +5,7 @@ All HTTP interactions are mocked via httpx.AsyncClient patching.
 """
 
 import os
+from typing import Any
 from unittest.mock import AsyncMock, patch
 
 import httpx
@@ -36,6 +37,99 @@ class TestToolRegistration:
         from mcp_google_search_console_crunchtools.tools import __all__
 
         assert len(__all__) == 10
+
+
+READ_ONLY = frozenset(
+    {
+        "list_sites_tool",
+        "get_site_tool",
+        "query_search_analytics_tool",
+        "list_sitemaps_tool",
+        "get_sitemap_tool",
+        "inspect_url_tool",
+    }
+)
+WRITES = frozenset(
+    {
+        "add_site_tool",
+        "delete_site_tool",
+        "submit_sitemap_tool",
+        "delete_sitemap_tool",
+    }
+)
+
+# Arguments that satisfy each read-only tool's required parameters.
+READ_ONLY_CALLS: dict[str, dict[str, Any]] = {
+    "list_sites_tool": {},
+    "get_site_tool": {"site_url": "https://crunchtools.com/"},
+    "query_search_analytics_tool": {
+        "site_url": "https://crunchtools.com/",
+        "start_date": "2026-03-01",
+        "end_date": "2026-03-03",
+        "dimensions": ["query"],
+    },
+    "list_sitemaps_tool": {"site_url": "https://crunchtools.com/"},
+    "get_sitemap_tool": {
+        "site_url": "https://crunchtools.com/",
+        "feedpath": "https://crunchtools.com/sitemap.xml",
+    },
+    "inspect_url_tool": {
+        "inspection_url": "https://crunchtools.com/blog/test",
+        "site_url": "https://crunchtools.com/",
+    },
+}
+
+# POSTs that only read, by tool name and the one URL suffix each may POST to.
+POST_READS = {
+    # searchanalytics.query: the filter is too large for a query string, so the
+    # API takes it as a JSON body. It returns rows and stores nothing.
+    "query_search_analytics_tool": "/searchAnalytics/query",
+    # urlInspection.index.inspect: returns what the index already holds for the
+    # URL. It does not request indexing or start a crawl.
+    "inspect_url_tool": "/urlInspection/index:inspect",
+}
+
+
+class TestReadOnlyAnnotation:
+    """Every registered tool is classified, and the reads really only read."""
+
+    @pytest.mark.asyncio
+    async def test_every_tool_is_classified(self) -> None:
+        from mcp_google_search_console_crunchtools.server import mcp
+
+        tools = await mcp.list_tools()
+        assert READ_ONLY.isdisjoint(WRITES)
+        assert {tool.name for tool in tools} == READ_ONLY | WRITES
+        annotated = {
+            tool.name
+            for tool in tools
+            if tool.annotations is not None
+            and tool.annotations.model_dump(by_alias=True).get("readOnlyHint") is True
+        }
+        assert annotated == READ_ONLY
+
+    def test_post_reads_are_read_only_tools(self) -> None:
+        assert set(POST_READS) <= READ_ONLY
+        assert set(READ_ONLY_CALLS) == READ_ONLY
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("name", sorted(READ_ONLY))
+    async def test_read_only_tool_sends_no_write(self, name: str) -> None:
+        """A read sends GET or HEAD, or a POST to its one allowlisted endpoint."""
+        from mcp_google_search_console_crunchtools.server import mcp
+
+        with _patch_client(_mock_response(json_data={"ok": True})) as client:
+            await mcp.call_tool(name, READ_ONLY_CALLS[name])
+
+        assert client.request.await_count >= 1
+        for call in client.request.await_args_list:
+            method = call.kwargs["method"]
+            url = call.kwargs["url"]
+            if method in ("GET", "HEAD"):
+                continue
+            assert method == "POST", f"{name} sent {method} {url}"
+            assert name in POST_READS, f"{name} sent POST {url}"
+            assert url.endswith(POST_READS[name]), f"{name} sent POST {url}"
 
 
 class TestErrorSafety:
