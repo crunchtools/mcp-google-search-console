@@ -28,9 +28,13 @@ from .tools import (
 
 logger = logging.getLogger(__name__)
 
+# A gateway drops an invalid optional argument only on a tool annotated read-only;
+# on anything else it refuses the call. Only tools that change nothing get this.
+READ_ONLY = {"readOnlyHint": True}
+
 mcp = FastMCP(
     name="mcp-google-search-console-crunchtools",
-    version="0.1.0",
+    version="0.2.0",
     instructions=(
         "Secure MCP server for Google Search Console. "
         "Query search analytics (clicks, impressions, CTR, position), "
@@ -39,7 +43,7 @@ mcp = FastMCP(
 )
 
 
-@mcp.tool()
+@mcp.tool(annotations=READ_ONLY)
 async def list_sites_tool() -> dict[str, Any]:
     """List all Search Console properties accessible by the authenticated user.
 
@@ -49,7 +53,7 @@ async def list_sites_tool() -> dict[str, Any]:
     return await list_sites()
 
 
-@mcp.tool()
+@mcp.tool(annotations=READ_ONLY)
 async def get_site_tool(
     site_url: str,
 ) -> dict[str, Any]:
@@ -95,7 +99,7 @@ async def delete_site_tool(
     return await delete_site(site_url=site_url)
 
 
-@mcp.tool()
+@mcp.tool(annotations=READ_ONLY)
 async def query_search_analytics_tool(
     site_url: str,
     start_date: str,
@@ -147,7 +151,7 @@ async def query_search_analytics_tool(
     )
 
 
-@mcp.tool()
+@mcp.tool(annotations=READ_ONLY)
 async def list_sitemaps_tool(
     site_url: str,
 ) -> dict[str, Any]:
@@ -162,7 +166,7 @@ async def list_sitemaps_tool(
     return await list_sitemaps(site_url=site_url)
 
 
-@mcp.tool()
+@mcp.tool(annotations=READ_ONLY)
 async def get_sitemap_tool(
     site_url: str,
     feedpath: str,
@@ -213,7 +217,7 @@ async def delete_sitemap_tool(
     return await delete_sitemap(site_url=site_url, feedpath=feedpath)
 
 
-@mcp.tool()
+@mcp.tool(annotations=READ_ONLY)
 async def inspect_url_tool(
     inspection_url: str,
     site_url: str,
