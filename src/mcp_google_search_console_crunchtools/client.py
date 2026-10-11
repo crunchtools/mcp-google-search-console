@@ -219,7 +219,7 @@ class SearchConsoleClient:
             self._handle_error_response(response)
 
         if response.status_code == 204:
-            return {"status": "deleted"}
+            return {"status": "deleted" if method == "DELETE" else "success"}
 
         return self._parse_response(response)
 

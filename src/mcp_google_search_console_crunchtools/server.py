@@ -4,6 +4,7 @@ This module creates and configures the MCP server with all tools,
 plus OAuth2 browser-based authentication routes.
 """
 
+import html
 import logging
 from typing import Any
 
@@ -264,7 +265,7 @@ async def oauth_callback(request: Request) -> Response:
     error = request.query_params.get("error")
     if error:
         return HTMLResponse(
-            f"<h2>Authentication failed</h2><p>Google returned: {error}</p>",
+            f"<h2>Authentication failed</h2><p>Google returned: {html.escape(error)}</p>",
             status_code=400,
         )
 
