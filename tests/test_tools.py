@@ -7,6 +7,7 @@ All HTTP interactions are mocked via httpx.AsyncClient patching.
 import os
 from typing import Any
 from unittest.mock import AsyncMock, patch
+from urllib.parse import parse_qs, urlparse
 
 import httpx
 import pytest
@@ -275,7 +276,7 @@ class TestSiteTools:
         with _patch_client(mock_resp):
             result = await add_site(site_url="https://example.com/")
 
-        assert result["status"] == "deleted"
+        assert result["status"] == "success"
 
     @pytest.mark.asyncio
     async def test_delete_site(self) -> None:
@@ -409,7 +410,7 @@ class TestSitemapTools:
                 feedpath="https://crunchtools.com/sitemap.xml",
             )
 
-        assert result["status"] == "deleted"
+        assert result["status"] == "success"
 
     @pytest.mark.asyncio
     async def test_delete_sitemap(self) -> None:
@@ -517,3 +518,34 @@ class TestClientErrorHandling:
 
         with _patch_client(mock_resp), pytest.raises(RateLimitError, match="60"):
             await list_sites()
+
+
+class TestOAuthFlow:
+    """Consent URL encoding and callback escaping."""
+
+    def test_consent_url_encodes_params(self) -> None:
+        from mcp_google_search_console_crunchtools.auth import build_consent_url
+
+        url = build_consent_url("id&x=1", "http://127.0.0.1/cb?a=b&c=d")
+        query = parse_qs(urlparse(url).query)
+        assert query["client_id"] == ["id&x=1"]
+        assert query["redirect_uri"] == ["http://127.0.0.1/cb?a=b&c=d"]
+        assert "x" not in query
+
+    @pytest.mark.asyncio
+    async def test_callback_escapes_error(self) -> None:
+        from starlette.requests import Request
+
+        from mcp_google_search_console_crunchtools.server import oauth_callback
+
+        scope = {
+            "type": "http",
+            "method": "GET",
+            "path": "/oauth2callback",
+            "query_string": b"error=%3Cscript%3Ealert(1)%3C/script%3E",
+            "headers": [],
+        }
+        response = await oauth_callback(Request(scope))
+        body = bytes(response.body).decode()
+        assert "<script>" not in body
+        assert "&lt;script&gt;" in body

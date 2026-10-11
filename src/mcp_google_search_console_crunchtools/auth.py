@@ -13,6 +13,7 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlencode
 
 import httpx
 
@@ -34,14 +35,16 @@ def build_consent_url(client_id: str, redirect_uri: str) -> str:
     _pending_states[state] = time.time()
     _prune_expired_states()
 
-    params = (
-        f"client_id={client_id}"
-        f"&redirect_uri={redirect_uri}"
-        f"&response_type=code"
-        f"&scope={GSC_SCOPE}"
-        f"&access_type=offline"
-        f"&prompt=consent"
-        f"&state={state}"
+    params = urlencode(
+        {
+            "client_id": client_id,
+            "redirect_uri": redirect_uri,
+            "response_type": "code",
+            "scope": GSC_SCOPE,
+            "access_type": "offline",
+            "prompt": "consent",
+            "state": state,
+        }
     )
     return f"{GOOGLE_AUTH_ENDPOINT}?{params}"
 

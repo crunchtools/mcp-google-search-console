@@ -8,6 +8,13 @@ Entries prior to 2026-09-19 are back-filled from GitHub Release notes (RT #1484)
 
 ## [Unreleased]
 
+### Fixed
+
+- A 204 response reports `{"status": "deleted"}` only for DELETE requests;
+  `add_site` and `submit_sitemap` now report `{"status": "success"}`.
+- The OAuth consent URL URL-encodes its query parameters.
+- The OAuth callback page HTML-escapes the `error` query parameter.
+
 ## [0.2.0] - 2026-10-10
 
 ### Added
