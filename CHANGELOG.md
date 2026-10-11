@@ -8,6 +8,8 @@ Entries prior to 2026-09-19 are back-filled from GitHub Release notes (RT #1484)
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-10-11
+
 ### Fixed
 
 - A 204 response reports `{"status": "deleted"}` only for DELETE requests;
