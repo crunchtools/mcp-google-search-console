@@ -23,10 +23,16 @@ DATA_STATE_VALUES = frozenset({"final", "all"})
 
 FILTER_DIMENSION_VALUES = frozenset({"query", "page", "country", "device", "searchAppearance"})
 
-FILTER_OPERATOR_VALUES = frozenset({
-    "equals", "notEquals", "contains", "notContains",
-    "includingRegex", "excludingRegex",
-})
+FILTER_OPERATOR_VALUES = frozenset(
+    {
+        "equals",
+        "notEquals",
+        "contains",
+        "notContains",
+        "includingRegex",
+        "excludingRegex",
+    }
+)
 
 MAX_ROW_LIMIT = 25000
 MAX_URL_LENGTH = 2048
@@ -96,12 +102,8 @@ class SearchAnalyticsQuery(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    start_date: str = Field(
-        ..., description="Start date (YYYY-MM-DD)"
-    )
-    end_date: str = Field(
-        ..., description="End date (YYYY-MM-DD)"
-    )
+    start_date: str = Field(..., description="Start date (YYYY-MM-DD)")
+    end_date: str = Field(..., description="End date (YYYY-MM-DD)")
     dimensions: list[str] | None = Field(
         default=None,
         max_length=MAX_DIMENSIONS,
@@ -151,9 +153,7 @@ class SearchAnalyticsQuery(BaseModel):
     @classmethod
     def validate_search_type(cls, v: str) -> str:
         if v not in SEARCH_TYPE_VALUES:
-            raise ValueError(
-                f"search_type must be one of: {', '.join(sorted(SEARCH_TYPE_VALUES))}"
-            )
+            raise ValueError(f"search_type must be one of: {', '.join(sorted(SEARCH_TYPE_VALUES))}")
         return v
 
     @field_validator("aggregation_type")
@@ -169,9 +169,7 @@ class SearchAnalyticsQuery(BaseModel):
     @classmethod
     def validate_data_state(cls, v: str) -> str:
         if v not in DATA_STATE_VALUES:
-            raise ValueError(
-                f"data_state must be one of: {', '.join(sorted(DATA_STATE_VALUES))}"
-            )
+            raise ValueError(f"data_state must be one of: {', '.join(sorted(DATA_STATE_VALUES))}")
         return v
 
 

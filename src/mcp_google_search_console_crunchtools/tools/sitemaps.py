@@ -42,9 +42,7 @@ async def get_sitemap(
     client = get_client()
     encoded_url = encode_site_url(site_url)
     encoded_feedpath = quote(feedpath, safe="")
-    return await client.webmasters_get(
-        f"/sites/{encoded_url}/sitemaps/{encoded_feedpath}"
-    )
+    return await client.webmasters_get(f"/sites/{encoded_url}/sitemaps/{encoded_feedpath}")
 
 
 async def submit_sitemap(
@@ -63,9 +61,7 @@ async def submit_sitemap(
     client = get_client()
     encoded_url = encode_site_url(site_url)
     encoded_feedpath = quote(feedpath, safe="")
-    return await client.webmasters_put(
-        f"/sites/{encoded_url}/sitemaps/{encoded_feedpath}"
-    )
+    return await client.webmasters_put(f"/sites/{encoded_url}/sitemaps/{encoded_feedpath}")
 
 
 async def delete_sitemap(
@@ -84,6 +80,4 @@ async def delete_sitemap(
     client = get_client()
     encoded_url = encode_site_url(site_url)
     encoded_feedpath = quote(feedpath, safe="")
-    return await client.webmasters_delete(
-        f"/sites/{encoded_url}/sitemaps/{encoded_feedpath}"
-    )
+    return await client.webmasters_delete(f"/sites/{encoded_url}/sitemaps/{encoded_feedpath}")
