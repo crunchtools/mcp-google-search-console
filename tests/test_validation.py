@@ -31,7 +31,7 @@ class TestSiteUrlEncoding:
     def test_url_with_path(self) -> None:
         """URL with path should be valid."""
         result = encode_site_url("https://example.com/blog/")
-        assert "example.com" in result
+        assert result == "https%3A%2F%2Fexample.com%2Fblog%2F"
 
     def test_empty_string(self) -> None:
         """Empty string should fail."""

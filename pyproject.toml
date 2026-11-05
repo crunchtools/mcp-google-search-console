@@ -91,8 +91,3 @@ skip = ["semgrep"]
 [tool.sdlc.push.pytest]
 env = { GSC_CLIENT_ID = "test_client_id_for_ci", GSC_CLIENT_SECRET = "test_client_secret_for_ci", GSC_REFRESH_TOKEN = "test_refresh_token_for_ci" }
 
-[tool.sdlc.ci]
-# The CodeQL Action job uploads to the Security tab and annotates new
-# alerts on the pull request, so CI does not analyse a second time.
-# The push tier still gates on it.
-skip = ["codeql"]
