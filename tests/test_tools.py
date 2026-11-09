@@ -6,10 +6,8 @@ All HTTP interactions are mocked via httpx.AsyncClient patching.
 
 import os
 from typing import Any
-from unittest.mock import AsyncMock, patch
 from urllib.parse import parse_qs, urlparse
 
-import httpx
 import pytest
 
 from tests.conftest import _mock_response, _patch_client
@@ -119,13 +117,13 @@ class TestReadOnlyAnnotation:
         """A read sends GET or HEAD, or a POST to its one allowlisted endpoint."""
         from mcp_google_search_console_crunchtools.server import mcp
 
-        with _patch_client(_mock_response(json_data={"ok": True})) as client:
+        with _patch_client(_mock_response(json_data={"ok": True})) as sent:
             await mcp.call_tool(name, READ_ONLY_CALLS[name])
 
-        assert client.request.await_count >= 1
-        for call in client.request.await_args_list:
-            method = call.kwargs["method"]
-            url = call.kwargs["url"]
+        assert sent
+        for request in sent:
+            method = request.method
+            url = str(request.url)
             if method in ("GET", "HEAD"):
                 continue
             assert method == "POST", f"{name} sent {method} {url}"
@@ -475,20 +473,12 @@ class TestClientErrorHandling:
             json_data={"error": {"message": "Invalid credentials"}},
         )
 
-        mock_client = AsyncMock(spec=httpx.AsyncClient)
-        mock_client.request = AsyncMock(return_value=error_resp)
-        mock_client.aclose = AsyncMock()
-        mock_client.headers = {}
-
-        with (
-            patch(
-                "mcp_google_search_console_crunchtools.client.SearchConsoleClient._ensure_token",
-                new_callable=AsyncMock,
-            ),
-            patch("httpx.AsyncClient", return_value=mock_client),
-            pytest.raises(PermissionDeniedError),
-        ):
+        # Two 401s in a row: the first clears the cached token and retries, the
+        # second is the one that has to surface.
+        with _patch_client(error_resp) as sent, pytest.raises(PermissionDeniedError):
             await list_sites()
+
+        assert len(sent) == 2
 
     @pytest.mark.asyncio
     async def test_404_raises_site_not_found(self) -> None:

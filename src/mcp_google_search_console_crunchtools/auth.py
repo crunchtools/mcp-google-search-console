@@ -17,6 +17,8 @@ from urllib.parse import urlencode
 
 import httpx
 
+from .transport import HEADERS, body_snippet, send_capped, where
+
 logger = logging.getLogger(__name__)
 
 GOOGLE_AUTH_ENDPOINT = "https://accounts.google.com/o/oauth2/v2/auth"
@@ -72,8 +74,9 @@ async def exchange_code(
     redirect_uri: str,
 ) -> dict[str, Any]:
     """Exchange an authorization code for tokens."""
-    async with httpx.AsyncClient(timeout=httpx.Timeout(30.0)) as client:
-        response = await client.post(
+    async with httpx.AsyncClient(timeout=httpx.Timeout(30.0), headers=HEADERS) as client:
+        request = client.build_request(
+            "POST",
             GOOGLE_TOKEN_ENDPOINT,
             data={
                 "client_id": client_id,
@@ -83,11 +86,19 @@ async def exchange_code(
                 "redirect_uri": redirect_uri,
             },
         )
+        response, body = await send_capped(client, request)
 
     if not response.is_success:
-        raise RuntimeError(f"Token exchange failed ({response.status_code}): {response.text[:200]}")
+        raise RuntimeError(
+            f"Token exchange failed: {where(response)} returned {body_snippet(body)}"
+        )
 
-    token_response = response.json()
+    try:
+        token_response = json.loads(body)
+    except ValueError as e:
+        raise RuntimeError(
+            f"Token exchange returned no JSON: {where(response)} sent {body_snippet(body)}"
+        ) from e
     expiry = datetime.now(timezone.utc).timestamp() + token_response.get("expires_in", 3600)
     return {
         "access_token": token_response["access_token"],
