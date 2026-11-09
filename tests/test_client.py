@@ -103,6 +103,31 @@ class TestResponseCeiling:
         )
 
     @pytest.mark.asyncio
+    async def test_a_single_oversized_chunk_is_refused_before_it_is_copied(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """`aiter_bytes()` does not promise small chunks: one can be the whole body.
+
+        Measuring after the append would mean copying in exactly the response
+        being refused, on the way to refusing it.
+        """
+        monkeypatch.setattr(transport, "MAX_RESPONSE_SIZE", 1024)
+
+        def handler(_request: httpx.Request) -> httpx.Response:
+            response = httpx.Response(
+                200,
+                headers={"content-type": "application/json"},
+                content=_chunks(b"x" * 8192, 1),
+            )
+            assert "content-length" not in response.headers
+            return response
+
+        with _serving(handler), pytest.raises(SearchConsoleApiError) as caught:
+            await SearchConsoleClient()._request("GET", SITES_URL)
+
+        assert "sent over the 1024 byte limit" in str(caught.value)
+
+    @pytest.mark.asyncio
     async def test_declared_length_over_the_cap_is_rejected_early(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:

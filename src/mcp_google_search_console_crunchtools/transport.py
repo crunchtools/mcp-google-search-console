@@ -93,17 +93,19 @@ async def read_capped(response: httpx.Response) -> bytes:
             response.status_code,
             f"{where(response)} declared {declared} bytes, over the {MAX_RESPONSE_SIZE} byte limit",
         )
-    # One growing buffer, not a list of chunks plus a full-size join: near the
-    # ceiling the join holds both copies at once, which doubles the peak this
-    # limit exists to bound. mcp-wordpress's `_read_body` is written this way.
+    # One buffer, measured before the copy. A chunk list plus `b"".join()`
+    # holds both copies at the ceiling, doubling the peak this bounds; and
+    # `aiter_bytes()` promises nothing about chunk size -- one chunk can be the
+    # whole body -- so appending before measuring would copy in exactly the
+    # response being refused.
     body = bytearray()
     async for chunk in response.aiter_bytes():
-        body += chunk
-        if len(body) > MAX_RESPONSE_SIZE:
+        if len(body) + len(chunk) > MAX_RESPONSE_SIZE:
             raise SearchConsoleApiError(
                 response.status_code,
                 f"{where(response)} sent over the {MAX_RESPONSE_SIZE} byte limit",
             )
+        body += chunk
     return bytes(body)
 
 
