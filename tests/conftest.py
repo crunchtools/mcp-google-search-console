@@ -60,22 +60,42 @@ def _mock_response(
 @contextmanager
 def _patch_client(
     response: httpx.Response,
-) -> Generator[AsyncMock, None, None]:
-    """Patch httpx.AsyncClient to return a mock response.
+) -> Generator[list[httpx.Request], None, None]:
+    """Answer every API call with one response, and collect the requests sent.
 
-    Bypasses OAuth token exchange by patching _ensure_token and provides
-    a mock client that returns the given response for API calls.
+    A real `httpx.AsyncClient` over a `MockTransport`, not an AsyncMock standing
+    in for the client: the client is what sets the User-Agent and what reads the
+    body in bounded pieces, so mocking its methods would mock away the behaviour
+    the contract exists to hold (constitution v1.36.0, Layer 3). OAuth token
+    exchange is still bypassed by patching `_ensure_token`.
+
+    Yields the `httpx.Request` objects as they go out, which is what a caller
+    asserting on method and URL wants.
     """
-    mock_client = AsyncMock(spec=httpx.AsyncClient)
-    mock_client.request = AsyncMock(return_value=response)
-    mock_client.aclose = AsyncMock()
-    mock_client.headers = {}
+    sent: list[httpx.Request] = []
+    # Content-length is dropped so httpx recomputes it for the body it is given.
+    headers = {k: v for k, v in response.headers.items() if k.lower() != "content-length"}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        sent.append(request)
+        # A fresh response each time: a streamed body can be read once, and the
+        # error messages under test name `response.request.url`, which has to be
+        # the URL the client actually built rather than the template's placeholder.
+        return httpx.Response(
+            response.status_code, headers=headers, content=response.content, request=request
+        )
+
+    real = httpx.AsyncClient
+
+    def factory(**kwargs: Any) -> httpx.AsyncClient:
+        kwargs.pop("transport", None)
+        return real(transport=httpx.MockTransport(handler), **kwargs)
 
     with (
         patch(
             "mcp_google_search_console_crunchtools.client.SearchConsoleClient._ensure_token",
             new_callable=AsyncMock,
         ),
-        patch("httpx.AsyncClient", return_value=mock_client),
+        patch("httpx.AsyncClient", factory),
     ):
-        yield mock_client
+        yield sent

@@ -8,6 +8,60 @@ Entries prior to 2026-09-19 are back-filled from GitHub Release notes (RT #1484)
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-11-08
+
+### Added
+
+- **The client says what it is.** Every request — the API calls and both OAuth
+  token exchanges — now carries
+  `User-Agent: mcp-google-search-console-crunchtools/<version> (+<repo url>)`,
+  with the version read from installed package metadata so it cannot drift from
+  `pyproject.toml`. httpx's default is `python-httpx/<version>`, which bot
+  protection answers with an HTML challenge page instead of the API: the
+  failure that cost an afternoon on mcp-wordpress (RT #1596).
+
+- `transport.py` holds what every outbound request has in common, because
+  `auth.py` talks to Google's token endpoint on its own and two copies of this
+  would mean one of them drifting.
+
+### Fixed
+
+- **The response ceiling is now a ceiling.** It read the `content-length`
+  header and nothing else, and that header is optional: a chunked reply carried
+  none and was read without limit. Bodies are now read in bounded pieces and
+  the read aborts the moment the running total passes `MAX_RESPONSE_SIZE`. The
+  header is still an early reject, now guarded so a malformed value is not an
+  unhandled `ValueError`.
+
+- **An error says which site answered, and with what.** A non-JSON body came
+  back as `Unknown error` or a bare 200 characters of text with no indication
+  of where it came from, so a WAF challenge, a consent screen and a genuine API
+  error were one message. They now name the method, the full requested URL, the
+  status, the content-type and a short body snippet.
+
+- **The URL in an error carries no secret.** Userinfo is dropped and
+  `access_token`, `client_secret`, `code`, `id_token`, `refresh_token` and
+  `token` are redacted by name — by name rather than by dropping the query
+  string, because the path and the ordinary parameters are the diagnosis.
+
+- **A token refresh that answered with HTML surfaced as a `KeyError`.** It
+  called `.json()` on an unchecked body and then indexed `access_token`. It now
+  reports what came back instead.
+
+### Changed
+
+- Client tests drive a real `httpx.AsyncClient` over `httpx.MockTransport`
+  instead of an `AsyncMock` standing in for the client. The client is what sets
+  the agent string and what reads the body in pieces, so mocking its methods
+  mocked away the behaviour the tests are now there to hold.
+
+- Error-message tests assert the whole message rather than a substring. An
+  absence cannot be shown by a substring check, and a substring check against a
+  URL literal is what CodeQL flags as incomplete sanitization.
+
+- Inherits constitution v1.36.0, whose MCP Server profile 1.8.0 states this
+  contract and checks it.
+
 ## [0.3.1] - 2026-10-31
 
 ### Security

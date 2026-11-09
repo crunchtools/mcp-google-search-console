@@ -4,6 +4,7 @@ This module provides a secure async HTTP client for the Search Console API.
 Handles automatic OAuth2 token refresh and dual base URL routing.
 """
 
+import json
 import logging
 import time
 from datetime import datetime, timezone
@@ -20,20 +21,29 @@ from .errors import (
     SearchConsoleApiError,
     SiteNotFoundError,
 )
+from .transport import (
+    HEADERS,
+    REQUEST_TIMEOUT,
+    body_snippet,
+    send_capped,
+    where,
+)
 
 logger = logging.getLogger(__name__)
 
-MAX_RESPONSE_SIZE = 10 * 1024 * 1024
-REQUEST_TIMEOUT = 30.0
 TOKEN_REFRESH_BUFFER = 60
 
 
-def _parse_error_body(response: httpx.Response) -> str:
-    """Extract a human-readable error message from an API error response."""
+def _parse_error_body(response: httpx.Response, body: bytes) -> str:
+    """Extract a human-readable error message from an API error response.
+
+    Falls back to naming the request and quoting the body, which is what tells
+    a WAF challenge or a consent screen apart from the API answering badly.
+    """
     try:
-        error_body = response.json()
+        error_body = json.loads(body)
     except ValueError:
-        return response.text[:200] if response.text else "Unknown error"
+        return f"{where(response)} is not JSON: {body_snippet(body)}"
 
     if not isinstance(error_body, dict):
         return str(error_body)
@@ -94,8 +104,11 @@ class SearchConsoleClient:
         if self._access_token and time.time() < self._token_expires_at - TOKEN_REFRESH_BUFFER:
             return
 
-        async with httpx.AsyncClient(timeout=httpx.Timeout(REQUEST_TIMEOUT)) as token_client:
-            response = await token_client.post(
+        async with httpx.AsyncClient(
+            timeout=httpx.Timeout(REQUEST_TIMEOUT), headers=HEADERS
+        ) as token_client:
+            request = token_client.build_request(
+                "POST",
                 self._config.token_endpoint,
                 data={
                     "client_id": self._config.client_id,
@@ -104,6 +117,7 @@ class SearchConsoleClient:
                     "grant_type": "refresh_token",
                 },
             )
+            response, body = await send_capped(token_client, request)
 
         if response.status_code in (400, 401):
             logger.error("Refresh token expired. Re-authenticate at: %s", self._config.auth_url)
@@ -112,10 +126,16 @@ class SearchConsoleClient:
         if not response.is_success:
             raise SearchConsoleApiError(
                 response.status_code,
-                f"Token refresh failed: {response.text[:200]}",
+                f"Token refresh failed: {where(response)} returned {body_snippet(body)}",
             )
 
-        token_data = response.json()
+        try:
+            token_data = json.loads(body)
+        except ValueError as e:
+            raise SearchConsoleApiError(
+                response.status_code,
+                f"Token refresh returned no JSON: {where(response)} sent {body_snippet(body)}",
+            ) from e
         self._access_token = token_data["access_token"]
         self._token_expires_at = time.time() + token_data.get("expires_in", 3600)
         logger.debug("OAuth2 token refreshed, expires in %ds", token_data.get("expires_in", 3600))
@@ -145,6 +165,7 @@ class SearchConsoleClient:
             headers={
                 "Authorization": f"Bearer {self._access_token}",
                 "Content-Type": "application/json",
+                **HEADERS,
             },
             timeout=httpx.Timeout(REQUEST_TIMEOUT),
         )
@@ -163,15 +184,11 @@ class SearchConsoleClient:
         url: str,
         params: dict[str, Any] | None,
         json_data: dict[str, Any] | None,
-    ) -> httpx.Response:
-        """Send a single HTTP request with error wrapping."""
+    ) -> tuple[httpx.Response, bytes]:
+        """Send one request and return the response with its bounded body."""
+        request = client.build_request(method, url, params=params, json=json_data)
         try:
-            return await client.request(
-                method=method,
-                url=url,
-                params=params,
-                json=json_data,
-            )
+            return await send_capped(client, request)
         except httpx.TimeoutException as e:
             raise SearchConsoleApiError(0, f"Request timeout: {e}") from e
         except httpx.RequestError as e:
@@ -203,32 +220,31 @@ class SearchConsoleClient:
         client = await self._get_client()
         logger.debug("API request: %s %s", method, url)
 
-        response = await self._send(client, method, url, params, json_data)
+        response, body = await self._send(client, method, url, params, json_data)
 
         if response.status_code == 401:
             self._access_token = None
             self._token_expires_at = 0.0
             client = await self._get_client()
-            response = await self._send(client, method, url, params, json_data)
-
-        content_length = response.headers.get("content-length")
-        if content_length and int(content_length) > MAX_RESPONSE_SIZE:
-            raise SearchConsoleApiError(0, "Response too large")
+            response, body = await self._send(client, method, url, params, json_data)
 
         if not response.is_success:
-            self._handle_error_response(response)
+            self._handle_error_response(response, body)
 
         if response.status_code == 204:
             return {"status": "deleted" if method == "DELETE" else "success"}
 
-        return self._parse_response(response)
+        return self._parse_response(response, body)
 
-    def _parse_response(self, response: httpx.Response) -> dict[str, Any]:
+    def _parse_response(self, response: httpx.Response, body: bytes) -> dict[str, Any]:
         """Parse a successful JSON response."""
         try:
-            parsed = response.json()
+            parsed = json.loads(body)
         except ValueError as e:
-            raise SearchConsoleApiError(response.status_code, f"Invalid JSON response: {e}") from e
+            raise SearchConsoleApiError(
+                response.status_code,
+                f"{where(response)} is not JSON ({e}): {body_snippet(body)}",
+            ) from e
 
         if isinstance(parsed, dict):
             return parsed
@@ -236,9 +252,9 @@ class SearchConsoleClient:
             return {"items": parsed}
         return {"data": parsed}
 
-    def _handle_error_response(self, response: httpx.Response) -> None:
+    def _handle_error_response(self, response: httpx.Response, body: bytes) -> None:
         """Handle error responses from the API."""
-        error_msg = _parse_error_body(response)
+        error_msg = _parse_error_body(response, body)
 
         match response.status_code:
             case 401:

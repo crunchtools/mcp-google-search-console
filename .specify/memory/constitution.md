@@ -2,9 +2,9 @@
 
 > **Version:** 1.1.0
 > **Ratified:** 2026-03-03
-> **Amended:** 2026-10-02
+> **Amended:** 2026-11-08
 > **Status:** Active
-> **Inherits:** [crunchtools/constitution](https://github.com/crunchtools/constitution) v1.31.0
+> **Inherits:** [crunchtools/constitution](https://github.com/crunchtools/constitution) v1.36.0
 > **Profile:** MCP Server
 
 This file holds what is specific to mcp-google-search-console. The fleet
@@ -26,7 +26,8 @@ inherited version and are checked against this repo's files by
   `SITE_URL_PATTERN`.
 - **API:** Bearer token in the `Authorization` header, never the URL; path
   parameters are URL-encoded; requests time out after 30s; responses are
-  capped at 10MB.
+  capped at 10MB while reading, not from the `content-length` header a chunked
+  reply need not send.
 - **Surface:** API wrappers whose only filesystem write is the credentials
   file below. No shell execution or code evaluation.
 
