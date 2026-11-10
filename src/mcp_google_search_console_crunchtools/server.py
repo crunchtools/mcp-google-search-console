@@ -35,7 +35,7 @@ READ_ONLY = {"readOnlyHint": True}
 
 mcp = FastMCP(
     name="mcp-google-search-console-crunchtools",
-    version="0.4.0",
+    version="0.4.1",
     instructions=(
         "Secure MCP server for Google Search Console. "
         "Query search analytics (clicks, impressions, CTR, position), "

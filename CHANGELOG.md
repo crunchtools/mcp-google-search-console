@@ -8,6 +8,20 @@ Entries prior to 2026-09-19 are back-filled from GitHub Release notes (RT #1484)
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-11-10
+
+### Fixed
+
+- **The container now installs the versions CI actually tested.** The builder
+  stage ran `pip install .`, which reads only `pyproject.toml`'s floor-pins and
+  lets pip re-resolve every dependency fresh at build time -- silently drifting
+  from the committed, Dependabot-maintained `uv.lock`. A new `lock` stage runs
+  `uv export --frozen` to turn `uv.lock` into a pinned `requirements.txt`, and
+  both the dependency and project installs now pass `--no-deps` so pip cannot
+  re-resolve anything. Same fix as mcp-gemini (RT #1564), after a prod outage
+  there from an unpinned `google-genai` jumping two major versions between the
+  CI-tested image and what shipped.
+
 ## [0.4.0] - 2026-11-08
 
 ### Added
