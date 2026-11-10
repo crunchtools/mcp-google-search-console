@@ -6,6 +6,7 @@ Tokens are stored as SecretStr to prevent accidental logging.
 
 import logging
 import os
+from urllib.parse import urlsplit
 
 from pydantic import SecretStr
 
@@ -16,6 +17,20 @@ logger = logging.getLogger(__name__)
 TOKEN_ENDPOINT = "https://oauth2.googleapis.com/token"
 WEBMASTERS_BASE_URL = "https://www.googleapis.com/webmasters/v3"
 INSPECTION_BASE_URL = "https://searchconsole.googleapis.com/v1"
+
+
+def resource_server_enabled() -> bool:
+    """Whether gateway-brokered resource-server mode is on (RT #1606).
+
+    Read on its own so the server can decide whether to mount the auth
+    provider without constructing a full Config (which needs credentials).
+    """
+    return os.environ.get("GSC_RESOURCE_SERVER", "").strip().lower() in (
+        "1",
+        "true",
+        "yes",
+        "on",
+    )
 
 
 class Config:
@@ -52,6 +67,25 @@ class Config:
         self._refresh_token = SecretStr(refresh_token) if refresh_token else None
         self._credentials_dir = os.environ.get("GSC_CREDENTIALS_DIR", "/data")
         self._redirect_uri = os.environ.get("GSC_OAUTH_REDIRECT_URI", "")
+        # Resource-server mode (RT #1606): when on, this server validates a
+        # gateway-injected Google bearer per request instead of self-authing.
+        # Default off keeps the standalone self-auth flow unchanged.
+        self._resource_server = resource_server_enabled()
+        base_url = os.environ.get("GSC_BASE_URL", "").strip()
+        if self._resource_server:
+            if not base_url:
+                raise ConfigurationError(
+                    "GSC_BASE_URL is required when GSC_RESOURCE_SERVER is set. "
+                    "Use the ORIGIN the gateway dials, with no path, e.g. http://mcp-gsc:8017"
+                )
+            parts = urlsplit(base_url)
+            if not parts.scheme or not parts.netloc or parts.path not in ("", "/"):
+                raise ConfigurationError(
+                    "GSC_BASE_URL must be an origin with no path, e.g. http://mcp-gsc:8017 "
+                    f"(got {base_url!r}). FastMCP appends the MCP path itself."
+                )
+            base_url = f"{parts.scheme}://{parts.netloc}"
+        self._base_url = base_url
 
         if not refresh_token:
             logger.info("No GSC_REFRESH_TOKEN set; will use file-based credentials or OAuth flow")
@@ -78,6 +112,16 @@ class Config:
     def credentials_dir(self) -> str:
         """Directory for file-based credential storage."""
         return self._credentials_dir
+
+    @property
+    def resource_server(self) -> bool:
+        """True when the gateway injects the bearer (RT #1606); self-auth is bypassed."""
+        return self._resource_server
+
+    @property
+    def base_url(self) -> str:
+        """Origin the gateway dials (resource-server mode only), e.g. http://mcp-gsc:8017."""
+        return self._base_url
 
     @property
     def redirect_uri(self) -> str:

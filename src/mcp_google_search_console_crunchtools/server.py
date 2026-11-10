@@ -6,14 +6,14 @@ plus OAuth2 browser-based authentication routes.
 
 import html
 import logging
-from typing import Any
+from typing import TYPE_CHECKING, Any, cast
 
 from fastmcp import FastMCP
 from starlette.requests import Request
 from starlette.responses import HTMLResponse, RedirectResponse, Response
 
 from .auth import build_consent_url, exchange_code, save_credentials, validate_state
-from .config import get_config
+from .config import get_config, resource_server_enabled
 from .tools import (
     add_site,
     delete_site,
@@ -29,13 +29,55 @@ from .tools import (
 
 logger = logging.getLogger(__name__)
 
+if TYPE_CHECKING:
+    from fastmcp.server.auth import RemoteAuthProvider
+    from pydantic import AnyHttpUrl
+
+
 # A gateway drops an invalid optional argument only on a tool annotated read-only;
 # on anything else it refuses the call. Only tools that change nothing get this.
 READ_ONLY = {"readOnlyHint": True}
 
+# How long GoogleTokenVerifier caches a validated token, bounded by its own
+# expiry. The gateway reuses one token per profile for ~an hour, so this keeps
+# tokeninfo to two calls per five minutes rather than per tool call.
+TOKEN_CACHE_TTL_SECONDS = 300
+
+
+def _build_auth() -> "RemoteAuthProvider | None":
+    """The gateway-brokered resource-server provider, or None for self-auth.
+
+    Read straight from the environment so importing this module never forces a
+    full Config (the self-auth default must import with no credentials present).
+    When resource-server mode is on, the deployed unit supplies the config this
+    needs. FastMCP's GoogleTokenVerifier validates the injected Google token via
+    tokeninfo so a bad token becomes an HTTP 401 the gateway can refresh on;
+    audience pins it to this client so a token minted for another app is refused.
+    """
+    if not resource_server_enabled():
+        return None
+    from fastmcp.server.auth import RemoteAuthProvider
+    from fastmcp.server.auth.providers.google import GoogleTokenVerifier
+
+    cfg = get_config()
+    verifier = GoogleTokenVerifier(
+        required_scopes=["https://www.googleapis.com/auth/webmasters"],
+        audience=cfg.client_id,
+        cache_ttl_seconds=TOKEN_CACHE_TTL_SECONDS,
+    )
+    # A plain string, never AnyHttpUrl(...): the latter renders a trailing slash
+    # and the gateway compares the issuer byte-for-byte, failing issuer_mismatch.
+    return RemoteAuthProvider(
+        token_verifier=verifier,
+        authorization_servers=cast("list[AnyHttpUrl]", ["https://accounts.google.com"]),
+        base_url=cfg.base_url,
+    )
+
+
 mcp = FastMCP(
     name="mcp-google-search-console-crunchtools",
-    version="0.4.1",
+    version="0.5.0",
+    auth=_build_auth(),
     instructions=(
         "Secure MCP server for Google Search Console. "
         "Query search analytics (clicks, impressions, CTR, position), "

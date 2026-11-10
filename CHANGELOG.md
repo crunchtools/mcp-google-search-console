@@ -8,6 +8,29 @@ Entries prior to 2026-09-19 are back-filled from GitHub Release notes (RT #1484)
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-11-10
+
+### Added
+
+- **Resource-server mode for gateway-brokered OAuth (RT #1606).** With
+  `GSC_RESOURCE_SERVER=true` and `GSC_BASE_URL` set to the origin the gateway
+  dials (e.g. `http://mcp-gsc:8017`, no path), the server validates a Google
+  bearer injected per request by the Trentina gateway instead of self-authing
+  from a stored refresh token. It advertises its protected-resource metadata
+  (`authorization_servers: accounts.google.com`, scope `webmasters`) and
+  challenges an unauthenticated call with 401, so the gateway's OAuth broker can
+  complete consent and auto-refresh the grant. Tokens are validated via FastMCP's
+  `GoogleTokenVerifier` (tokeninfo, audience pinned to the client id) so a bad or
+  foreign token is a 401 the gateway refreshes on. Each request carries its own
+  bearer, so two profiles' grants never cross. Default off; the standalone
+  self-auth flow is unchanged and remains the rollback path.
+
+### Changed
+
+- The API client's shared connection pool no longer holds a default
+  `Authorization` header; every request builds its own from a per-request token
+  source. No behaviour change in self-auth mode.
+
 ## [0.4.1] - 2026-11-10
 
 ### Fixed
