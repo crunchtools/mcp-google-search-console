@@ -153,22 +153,35 @@ class SearchConsoleClient:
             },
         )
 
-    async def _get_client(self) -> httpx.AsyncClient:
-        """Get or create the async HTTP client with current Bearer token."""
+    async def _bearer(self) -> str:
+        """The access token for THIS request.
+
+        In resource-server mode (RT #1606) the gateway injects a Google bearer per
+        request; it is read from the request context, bound to this task, so two
+        profiles' tokens can never cross. Otherwise the self-managed refresh-token
+        grant is used. Only this method ever reaches a credential; the shared
+        client below carries no default Authorization header.
+        """
+        if self._config.resource_server:
+            from fastmcp.server.dependencies import get_access_token
+
+            token = get_access_token()
+            if token is None:
+                raise PermissionDeniedError("No bearer token on the request")
+            return token.token
         await self._ensure_token()
+        if self._access_token is None:  # _ensure_token sets it or raises; defensive
+            raise AuthRequiredError(self._config.auth_url)
+        return self._access_token
 
-        if self._client is not None:
-            self._client.headers["Authorization"] = f"Bearer {self._access_token}"
-            return self._client
-
-        self._client = httpx.AsyncClient(
-            headers={
-                "Authorization": f"Bearer {self._access_token}",
-                "Content-Type": "application/json",
-                **HEADERS,
-            },
-            timeout=httpx.Timeout(REQUEST_TIMEOUT),
-        )
+    async def _get_client(self) -> httpx.AsyncClient:
+        """The shared connection pool. It carries no credential; every request sets
+        its own Authorization header from _bearer()."""
+        if self._client is None:
+            self._client = httpx.AsyncClient(
+                headers={"Content-Type": "application/json", **HEADERS},
+                timeout=httpx.Timeout(REQUEST_TIMEOUT),
+            )
         return self._client
 
     async def close(self) -> None:
@@ -184,9 +197,16 @@ class SearchConsoleClient:
         url: str,
         params: dict[str, Any] | None,
         json_data: dict[str, Any] | None,
+        token: str,
     ) -> tuple[httpx.Response, bytes]:
-        """Send one request and return the response with its bounded body."""
-        request = client.build_request(method, url, params=params, json=json_data)
+        """Send one request with a per-request bearer and return its bounded body."""
+        request = client.build_request(
+            method,
+            url,
+            params=params,
+            json=json_data,
+            headers={"Authorization": f"Bearer {token}"},
+        )
         try:
             return await send_capped(client, request)
         except httpx.TimeoutException as e:
@@ -218,15 +238,19 @@ class SearchConsoleClient:
             PermissionDeniedError: On authorization failures
         """
         client = await self._get_client()
+        token = await self._bearer()
         logger.debug("API request: %s %s", method, url)
 
-        response, body = await self._send(client, method, url, params, json_data)
+        response, body = await self._send(client, method, url, params, json_data, token)
 
-        if response.status_code == 401:
+        # Self-auth only: a stale cached access token is cleared and refreshed once.
+        # In resource-server mode the gateway owns the token and its own retry path
+        # refreshes the grant; a 401 here is raised straight rather than retried.
+        if response.status_code == 401 and not self._config.resource_server:
             self._access_token = None
             self._token_expires_at = 0.0
-            client = await self._get_client()
-            response, body = await self._send(client, method, url, params, json_data)
+            token = await self._bearer()
+            response, body = await self._send(client, method, url, params, json_data, token)
 
         if not response.is_success:
             self._handle_error_response(response, body)

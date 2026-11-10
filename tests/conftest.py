@@ -2,10 +2,11 @@
 
 import json
 import os
+import time
 from collections.abc import Generator
 from contextlib import contextmanager
 from typing import Any
-from unittest.mock import AsyncMock, patch
+from unittest.mock import patch
 
 import httpx
 import pytest
@@ -91,11 +92,17 @@ def _patch_client(
         kwargs.pop("transport", None)
         return real(transport=httpx.MockTransport(handler), **kwargs)
 
+    async def _fake_ensure_token(self: Any) -> None:
+        # _bearer() reads self._access_token after _ensure_token(); mirror the real
+        # contract (populate the cached token) instead of a bare no-op so the
+        # self-auth path has a token to send.
+        self._access_token = "test_access_token"
+        self._token_expires_at = time.time() + 3600
+
+    from mcp_google_search_console_crunchtools.client import SearchConsoleClient
+
     with (
-        patch(
-            "mcp_google_search_console_crunchtools.client.SearchConsoleClient._ensure_token",
-            new_callable=AsyncMock,
-        ),
+        patch.object(SearchConsoleClient, "_ensure_token", _fake_ensure_token),
         patch("httpx.AsyncClient", factory),
     ):
         yield sent

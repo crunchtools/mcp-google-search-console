@@ -6,11 +6,12 @@ the client reads, so an `AsyncMock` standing in for the client would mock away
 the behaviour under test.
 """
 
+import time
 from collections.abc import AsyncIterator, Callable, Generator
 from contextlib import contextmanager
 from importlib.metadata import version
 from typing import Any
-from unittest.mock import AsyncMock, patch
+from unittest.mock import patch
 
 import httpx
 import pytest
@@ -39,11 +40,12 @@ def _serving(handler: Handler) -> Generator[None, None, None]:
         kwargs.pop("transport", None)
         return real(transport=httpx.MockTransport(handler), **kwargs)
 
+    async def _fake_ensure_token(self: Any) -> None:
+        self._access_token = "test_access_token"
+        self._token_expires_at = time.time() + 3600
+
     with (
-        patch(
-            "mcp_google_search_console_crunchtools.client.SearchConsoleClient._ensure_token",
-            new_callable=AsyncMock,
-        ),
+        patch.object(SearchConsoleClient, "_ensure_token", _fake_ensure_token),
         patch("httpx.AsyncClient", factory),
     ):
         yield
