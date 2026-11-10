@@ -51,6 +51,23 @@ class TestModeConfig:
         assert cfg.resource_server is True
         assert cfg.base_url == "http://mcp-gsc:8017"
 
+    @pytest.mark.parametrize(
+        "bad",
+        [
+            "http://user:pass@mcp-gsc:8017",
+            "http://mcp-gsc:8017?x=1",
+            "http://mcp-gsc:8017#f",
+            "http://mcp-gsc:8017/mcp",
+        ],
+    )
+    def test_base_url_rejects_non_origin_components(
+        self, monkeypatch: pytest.MonkeyPatch, bad: str
+    ) -> None:
+        monkeypatch.setenv("GSC_RESOURCE_SERVER", "true")
+        monkeypatch.setenv("GSC_BASE_URL", bad)
+        with pytest.raises(ConfigurationError):
+            Config()
+
 
 class TestProtectedResourceMetadata:
     async def test_metadata_matches_what_the_gateway_expects(

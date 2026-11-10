@@ -13,7 +13,8 @@ Usage:
 Environment Variables:
     GSC_CLIENT_ID: Required. Google Cloud OAuth client ID.
     GSC_CLIENT_SECRET: Required. Google Cloud OAuth client secret.
-    GSC_REFRESH_TOKEN: Required. OAuth refresh token with webmasters scope.
+    GSC_REFRESH_TOKEN: OAuth refresh token with webmasters scope. Used in
+        self-auth mode only; not needed when GSC_RESOURCE_SERVER is true.
     GSC_RESOURCE_SERVER: Optional (default off). When true, validate a
         gateway-injected Google bearer per request instead of self-authing.
     GSC_BASE_URL: Required when GSC_RESOURCE_SERVER is true. The origin the

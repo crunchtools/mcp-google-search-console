@@ -79,12 +79,22 @@ class Config:
                     "Use the ORIGIN the gateway dials, with no path, e.g. http://mcp-gsc:8017"
                 )
             parts = urlsplit(base_url)
-            if not parts.scheme or not parts.netloc or parts.path not in ("", "/"):
+            if (
+                not parts.scheme
+                or not parts.hostname
+                or parts.path not in ("", "/")
+                or parts.query
+                or parts.fragment
+                or parts.username
+                or parts.password
+            ):
                 raise ConfigurationError(
-                    "GSC_BASE_URL must be an origin with no path, e.g. http://mcp-gsc:8017 "
+                    "GSC_BASE_URL must be a bare origin (scheme://host[:port]) with no "
+                    "credentials, path, query or fragment, e.g. http://mcp-gsc:8017 "
                     f"(got {base_url!r}). FastMCP appends the MCP path itself."
                 )
-            base_url = f"{parts.scheme}://{parts.netloc}"
+            port = f":{parts.port}" if parts.port else ""
+            base_url = f"{parts.scheme}://{parts.hostname}{port}"
         self._base_url = base_url
 
         if not refresh_token:
