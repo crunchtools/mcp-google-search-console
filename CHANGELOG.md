@@ -8,6 +8,12 @@ Entries prior to 2026-09-19 are back-filled from GitHub Release notes (RT #1484)
 
 ## [Unreleased]
 
+## [0.5.1] - 2026-11-11
+
+### Changed
+
+- No functional change. First release on the build-once container pipeline (RT#1550): `:latest` now names a digest that passed the release gates.
+
 ## [0.5.0] - 2026-11-10
 
 ### Added
