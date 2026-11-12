@@ -146,6 +146,13 @@ class TestVerifierAcceptsBrokeredToken:
         info = _tokeninfo(WEBMASTERS, sub=False)
         assert await self._verify(monkeypatch, info) is None
 
+    async def test_openid_is_enforced_even_when_sub_is_present(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # Isolates the new requirement from the missing-sub refusal above.
+        info = _tokeninfo(WEBMASTERS, sub=True)
+        assert await self._verify(monkeypatch, info) is None
+
 
 class TestPerRequestBearer:
     async def test_two_tokens_never_cross_and_no_self_auth_happens(
