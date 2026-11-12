@@ -43,6 +43,10 @@ READ_ONLY = {"readOnlyHint": True}
 # tokeninfo to two calls per five minutes rather than per tool call.
 TOKEN_CACHE_TTL_SECONDS = 300
 
+# What a brokered token must carry, and so what the protected-resource metadata
+# advertises and the gateway asks Google for. See _build_auth for why openid.
+REQUIRED_SCOPES = ["openid", "https://www.googleapis.com/auth/webmasters"]
+
 
 def _build_auth() -> "RemoteAuthProvider | None":
     """The gateway-brokered resource-server provider, or None for self-auth.
@@ -53,6 +57,12 @@ def _build_auth() -> "RemoteAuthProvider | None":
     needs. FastMCP's GoogleTokenVerifier validates the injected Google token via
     tokeninfo so a bad token becomes an HTTP 401 the gateway can refresh on;
     audience pins it to this client so a token minted for another app is refused.
+
+    ``openid`` is required as well as ``webmasters``: the verifier rejects any
+    token whose tokeninfo has no ``sub``, and Google only returns ``sub`` for a
+    token carrying an identity scope. The gateway requests exactly the scopes
+    this server advertises, so without ``openid`` here every brokered token was
+    refused as ``invalid_token`` (RT #1613).
     """
     if not resource_server_enabled():
         return None
@@ -61,7 +71,7 @@ def _build_auth() -> "RemoteAuthProvider | None":
 
     cfg = get_config()
     verifier = GoogleTokenVerifier(
-        required_scopes=["https://www.googleapis.com/auth/webmasters"],
+        required_scopes=REQUIRED_SCOPES,
         audience=cfg.client_id,
         cache_ttl_seconds=TOKEN_CACHE_TTL_SECONDS,
     )
@@ -76,7 +86,7 @@ def _build_auth() -> "RemoteAuthProvider | None":
 
 mcp = FastMCP(
     name="mcp-google-search-console-crunchtools",
-    version="0.5.1",
+    version="0.5.2",
     auth=_build_auth(),
     instructions=(
         "Secure MCP server for Google Search Console. "

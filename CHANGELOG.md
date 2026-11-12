@@ -8,6 +8,12 @@ Entries prior to 2026-09-19 are back-filled from GitHub Release notes (RT #1484)
 
 ## [Unreleased]
 
+## [0.5.2] - 2026-11-11
+
+### Fixed
+
+- Resource-server mode now requires and advertises the `openid` scope alongside `webmasters`. Without it, Google's tokeninfo returns no `sub` for a gateway-brokered token and FastMCP's verifier refused every request as `invalid_token` (RT#1613). Existing brokered grants need one re-consent to pick up the new scope.
+
 ## [0.5.1] - 2026-11-11
 
 ### Changed

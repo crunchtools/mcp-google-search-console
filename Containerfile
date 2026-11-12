@@ -35,7 +35,7 @@ FROM quay.io/hummingbird/python:3.14
 
 # Labels for container metadata
 LABEL name="mcp-google-search-console-crunchtools" \
-      version="0.5.1" \
+      version="0.5.2" \
       summary="Secure MCP server for Google Search Console analytics, sitemaps, and URL inspection" \
       description="A security-focused MCP server for Google Search Console built on Red Hat UBI" \
       maintainer="crunchtools.com" \

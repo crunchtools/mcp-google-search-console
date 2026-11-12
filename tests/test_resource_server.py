@@ -96,6 +96,55 @@ class TestProtectedResourceMetadata:
         # check against Google's issuer "https://accounts.google.com".
         assert doc["authorization_servers"] == ["https://accounts.google.com"]
         assert WEBMASTERS in doc["scopes_supported"]
+        # The gateway asks Google for exactly these; without openid the token
+        # has no `sub` and the verifier refuses it (RT #1613).
+        assert "openid" in doc["scopes_supported"]
+
+
+def _tokeninfo(scope: str, *, sub: bool) -> dict[str, Any]:
+    """tokeninfo as Google returned it for a gateway-brokered token (RT #1613)."""
+    client_id = "test_client_id"
+    info: dict[str, Any] = {
+        "aud": client_id,
+        "azp": client_id,
+        "scope": scope,
+        "expires_in": "3557",
+    }
+    if sub:
+        info["sub"] = "1234567890"
+    return info
+
+
+class TestVerifierAcceptsBrokeredToken:
+    async def _verify(self, monkeypatch: pytest.MonkeyPatch, info: dict[str, Any]) -> Any:
+        monkeypatch.setenv("GSC_RESOURCE_SERVER", "true")
+        monkeypatch.setenv("GSC_BASE_URL", "http://mcp-gsc:8017")
+        config_module._config = None
+
+        import httpx2
+
+        from mcp_google_search_console_crunchtools.server import _build_auth
+
+        # Every Google call answers with the tokeninfo body; the verifier's
+        # follow-up userinfo call only enriches claims and accepts any 200.
+        transport = httpx2.MockTransport(lambda _request: httpx2.Response(200, json=info))
+
+        provider = _build_auth()
+        assert provider is not None
+        verifier: Any = provider.token_verifier
+        verifier._http_client = httpx2.AsyncClient(transport=transport)
+        return await verifier.verify_token("ya29.test")
+
+    async def test_token_with_openid_and_webmasters_is_accepted(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        info = _tokeninfo(f"openid {WEBMASTERS}", sub=True)
+        assert await self._verify(monkeypatch, info) is not None
+
+    async def test_webmasters_only_token_is_refused(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        # The shape the gateway held before the fix: right aud and scope, no sub.
+        info = _tokeninfo(WEBMASTERS, sub=False)
+        assert await self._verify(monkeypatch, info) is None
 
 
 class TestPerRequestBearer:
