@@ -86,7 +86,7 @@ def _build_auth() -> "RemoteAuthProvider | None":
 
 mcp = FastMCP(
     name="mcp-google-search-console-crunchtools",
-    version="0.5.2",
+    version="0.5.3",
     auth=_build_auth(),
     instructions=(
         "Secure MCP server for Google Search Console. "
