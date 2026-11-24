@@ -91,3 +91,5 @@ skip = ["semgrep"]
 [tool.sdlc.push.pytest]
 env = { GSC_CLIENT_ID = "test_client_id_for_ci", GSC_CLIENT_SECRET = "test_client_secret_for_ci", GSC_REFRESH_TOKEN = "test_refresh_token_for_ci" }
 
+[tool.sdlc]
+repo-kinds = ["mcp-server"]
