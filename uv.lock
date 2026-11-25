@@ -1066,7 +1066,7 @@ wheels = [
 
 [[package]]
 name = "mcp-google-search-console-crunchtools"
-version = "0.5.3"
+version = "0.6.0"
 source = { editable = "." }
 dependencies = [
     { name = "fastmcp" },
